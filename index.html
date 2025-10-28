@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gait Matching Puzzle</title>
+
+  <!-- Vanta & Three.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r121/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.net.min.js"></script>
+
+  <!-- AOS -->
+  <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+  <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+
+  <style>
+    html, body { margin:0; padding:0; height:100%; overflow-x:hidden; }
+    body { font-family: Arial, sans-serif; color:#fff; position:relative; }
+
+    /* ---------- VANTA BACKGROUND ---------- */
+    #vanta-bg {
+      position:fixed; top:0; left:0; width:100%; height:100%; z-index:-1;
+    }
+
+    /* ---------- GAME CONTAINER ---------- */
+    .container {
+      position:relative;               /* above the net */
+      z-index:1;
+      max-width:800px; margin:0 auto; padding:20px;
+      background:rgba(0,0,0,0.45);     /* semi-transparent so net shows through */
+      border-radius:12px;
+      text-align:center;
+    }
+
+    h1 { margin-bottom:10px; }
+
+    .gait-name, .gait-gif {
+      display:inline-block; width:240px; height:200px; margin:10px;
+      padding:0; background:#222; 
+      cursor:grab; vertical-align:top; user-select:none;
+      clip-path: polygon(25% 6%, 75% 6%, 100% 50%, 75% 94%, 25% 94%, 0% 50%);
+      transition: box-shadow 0.2s, border-color 0.2s, background 0.2s;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+    }
+    .gait-span {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      text-align: center;
+      width: 60%;
+    margin-left: 47px;
+    }
+    .gait-name.dragging, .gait-gif.dragging {
+      opacity:0.5;
+      box-shadow: 0 0 0 4px #3f51b544;
+    }
+    .gait-name:hover, .gait-gif:hover {
+      border-color: #3f51b5;
+      background: #333;
+      box-shadow: 0 4px 16px rgba(63,81,181,0.18);
+    }
+    .gait-gif img {
+      width:100%; height:100%; object-fit:contain;
+      clip-path: inherit;
+    }
+    .matched {
+      background:#4caf50 !important; border-color:#2e7d32 !important;
+      box-shadow: 0 0 0 4px #4caf5044;
+    }
+    .not-matched {
+      background:rgb(167, 0, 0) !important; border-color:rgb(167, 0, 0) !important;
+      box-shadow: 0 0 0 4px rgb(105, 2, 2);
+    }
+
+    #message { font-size:20px; margin:20px; min-height:28px; }
+    button { padding:10px 20px; font-size:16px; margin:10px; cursor:pointer; }
+  </style>
+</head>
+
+<body>
+  <!-- Vanta background -->
+  <div id="vanta-bg"></div>
+
+  <div class="container">
+    <h1 data-aos="fade-up"
+        data-aos-duration="1200"
+        data-aos-easing="ease-out-cubic"
+        data-aos-delay="200">
+      Gait Matching Game
+    </h1>
+
+    <p data-aos="fade-up" data-aos-delay="400">
+      Drag a gait name onto its matching GIF.
+    </p>
+
+    <div id="names" data-aos="fade-up" data-aos-delay="600"></div>
+    <div id="gifs"   data-aos="fade-up" data-aos-delay="800"></div>
+
+    <div id="message"></div>
+    <button id="reset">Reset Game</button>
+  </div>
+
+  <!-- ==================== VANTA ==================== -->
+  <script>
+    // Initialise Vanta on its own div
+    window.addEventListener('load', () => {
+      if (window.VANTA) {
+        VANTA.NET({
+          el: "#vanta-bg",
+          mouseControls: true,
+          touchControls: true,
+          gyroControls: false,
+          minHeight: 200,
+          minWidth: 600,
+          scale: 1.0,
+          scaleMobile: 1.0,
+          color: 0x3f51b5,
+          backgroundColor: 0x0,
+          points: 12,
+          maxDistance: 22,
+          spacing: 16
+        });
+      }
+
+      // Initialise AOS **after** the page (and Vanta) is ready
+      AOS.init({ once: true });
+    });
+  </script>
+
+  <!-- ==================== GAME LOGIC ==================== -->
+  <script>
+    const gaits = [
+      { name: "Lifts foot high and slams it down due to loss of sensation.Often seen in peripheral neuropathy or sensory ataxia", gif: "./videos/Stamping.mp4" },
+      { name: "Lifts knee high to avoid dragging the foot (foot drop).Common in peroneal nerve injury or Charcot-Marie-Tooth disease", gif: "./videos/Steppage.mp4" },
+      { name: "Sways side to side with each step due to weak hip muscles.Typical in muscular dystrophy or bilateral hip dislocation", gif: "./videos/Drunken.mp4" }
+    ];
+
+    let matches = 0;
+
+    function shuffle(arr) {
+      const a = [...arr];
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    /* ---------- NAME CARD ---------- */
+    function createName(gait) {
+      const div = document.createElement('div');
+      const span = document.createElement('span');
+      span.className = 'gait-span';
+      span.textContent = gait.name;
+      div.className = 'gait-name';
+      div.appendChild(span);
+      div.draggable = true;
+
+      div.addEventListener('dragstart', e => {
+        e.dataTransfer.setData('text/plain', gait.name);
+        div.classList.add('dragging');
+      });
+      div.addEventListener('dragend', () => div.classList.remove('dragging'));
+
+      return div;
+    }
+
+    /* ---------- GIF CARD ---------- */
+    function createGif(gait) {
+      const div = document.createElement('div');
+      div.className = 'gait-gif';
+      div.dataset.name = gait.name;
+
+      const vid = `
+      <video autoplay muted loop playsinline style="
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+">
+            <source src="${gait.gif}" type="video/mp4">
+            Your browser does not support the video tag.
+        </video>
+      `
+      div.innerHTML=vid;
+
+      div.addEventListener('dragover', e => {
+        if (!div.classList.contains('matched')) e.preventDefault();
+      });
+
+      div.addEventListener('drop', e => {
+        e.preventDefault();
+        if (div.classList.contains('matched')) return;
+
+        const droppedName = e.dataTransfer.getData('text/plain');
+        if (!droppedName) return;
+
+        if (droppedName === gait.name) {
+          // correct
+          div.classList.add('matched');
+          const nameEl = [...document.querySelectorAll('.gait-name')]
+                          .find(n => n.textContent === droppedName);
+          if (nameEl) {
+            nameEl.classList.add('matched');
+            nameEl.draggable = false;
+          }
+          matches++;
+          if (matches === gaits.length) {
+            document.getElementById('message').textContent =
+              'Congratulations! You matched all gaits! 🎉';
+          }
+        } else {
+          // wrong
+          div.classList.add('not-matched');
+          const nameEl = [...document.querySelectorAll('.gait-name')]
+                          .find(n => n.textContent === droppedName);
+          if (nameEl) {
+            nameEl.classList.add('not-matched');
+            nameEl.draggable = false;
+          }
+          const msg = document.getElementById('message');
+          msg.textContent = 'Wrong match – try again!';
+          setTimeout(() => msg.textContent = '', 1500);
+        }
+      });
+
+      return div;
+    }
+
+    /* ---------- INITIALISE ---------- */
+    function initGame() {
+      const namesDiv = document.getElementById('names');
+      const gifsDiv  = document.getElementById('gifs');
+      namesDiv.innerHTML = '';
+      gifsDiv.innerHTML  = '';
+      document.getElementById('message').textContent = '';
+      matches = 0;
+
+      const nameOrder = shuffle(gaits);
+      const gifOrder  = shuffle(gaits);
+
+      nameOrder.forEach(g => namesDiv.appendChild(createName(g)));
+      gifOrder .forEach(g => gifsDiv .appendChild(createGif (g)));
+    }
+
+    document.getElementById('reset').onclick = initGame;
+
+    // start the first round
+    initGame();
+  </script>
+</body>
+</html>
