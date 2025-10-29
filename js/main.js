@@ -12,6 +12,8 @@ const gaits = [
         const j = Math.floor(Math.random() * (i + 1));
         [a[i], a[j]] = [a[j], a[i]];
       }
+      createName(a);
+      createGif(a);
       return a;
     }
 
@@ -20,7 +22,7 @@ const gaits = [
       const div = document.createElement('div');
       const span = document.createElement('span');
       span.className = 'gait-span';
-      span.innerHTML = `<div data-aos="fade-up" data-aos-delay="600">${gait.name}</div>`;
+      span.innerHTML = `<div>${gait.name}</div>`;
       div.className = 'gait-name';
       div.appendChild(span);
       div.draggable = true;
@@ -41,7 +43,7 @@ const gaits = [
       div.dataset.name = gait.name;
 
       const vid = `
-      <video autoplay muted loop playsinline data-aos="fade-up" data-aos-delay="600" style="
+      <video autoplay muted loop playsinline style="
     width: 100%;
     height: 100%;
     object-fit: cover;
